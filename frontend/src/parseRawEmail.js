@@ -17,6 +17,39 @@ export function extractHeadersAndBody(rawEmail) {
   };
 }
 
+// Try to repair common mojibake (UTF-8 bytes interpreted as Latin1/Windows-1252).
+function containsPolishLetters(s) {
+  return /[ąćęłńóśżźĄĆĘŁŃÓŚŻŹ]/.test(s);
+}
+
+function looksLikeMojibake(s) {
+  // common mojibake markers (Ã, Å, Â sequences) often appear when UTF-8 bytes were mis-decoded
+  return /Ã|Å|Â/.test(s);
+}
+
+function tryRepairEncoding(text) {
+  // If there's no mojibake signs, skip work
+  if (!looksLikeMojibake(text)) return text;
+
+  if (typeof TextDecoder === 'undefined') return text;
+
+  // Convert JS string (each char is 0-255) to bytes
+  const bytes = new Uint8Array(text.split('').map(c => c.charCodeAt(0) & 0xff));
+
+  const candidates = ['utf-8', 'windows-1250', 'iso-8859-2', 'windows-1252'];
+  for (const enc of candidates) {
+    try {
+      const decoded = new TextDecoder(enc).decode(bytes);
+      // Prefer candidate if it contains Polish letters
+      if (containsPolishLetters(decoded)) return decoded;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  return text;
+}
+
 /**
  * Decodes a MIME encoded-word string (RFC 2047)
  * @param {string} str - The encoded string
@@ -269,6 +302,21 @@ export function parseEmailBody(body, contentType, headers) {
     // Single part email
     parsedBody = body;
     isHtml = contentType.toLowerCase().includes("html");
+
+    // Try to detect charset for single-part bodies and decode if possible
+    const charsetMatch = contentType.match(/charset="?([^";\r\n]+)"?/i);
+    if (!charsetMatch && typeof TextDecoder !== 'undefined') {
+      // No specified charset -> try to repair mojibake (common case when body bytes are UTF-8 but decoded incorrectly)
+      parsedBody = tryRepairEncoding(parsedBody);
+    } else if (charsetMatch && typeof TextDecoder !== 'undefined') {
+      try {
+        const charset = charsetMatch[1];
+        const bytes = new Uint8Array(parsedBody.split("").map((c) => c.charCodeAt(0)));
+        parsedBody = new TextDecoder(charset).decode(bytes);
+      } catch (e) {
+        console.error('Error decoding single-part charset:', e);
+      }
+    }
   }
 
   return { parsedBody, isHtml };
@@ -320,6 +368,9 @@ export function parseMultipartBody(body, boundary) {
         } catch (e) {
           console.error("Error decoding charset:", e);
         }
+      } else {
+        // No charset provided — try to detect and repair common mojibake
+        partBody = tryRepairEncoding(partBody);
       }
 
       if (isHtmlPart) {
@@ -376,11 +427,14 @@ export function parseRawEmail(rawEmail) {
     let finalBody = parsedBody;
     if (
       parsedHeaders.contentTransferEncoding.toLowerCase() ===
-        "quoted-printable" ||
+      "quoted-printable" ||
       finalBody.includes("=3D")
     ) {
       finalBody = decodeQuotedPrintable(finalBody);
     }
+
+    // Attempt to repair mojibake on the final body as a last-resort
+    finalBody = tryRepairEncoding(finalBody);
 
     return {
       from: fromData.formatted,

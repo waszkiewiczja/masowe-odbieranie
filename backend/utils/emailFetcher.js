@@ -26,6 +26,9 @@ async function fetchEmails({ username, password, pop3 }) {
     timeout: 30000,
   });
 
+  // Hold collected messages here so catch block can return partial results when needed
+  let emails = [];
+
   try {
     // Connect to the server
     console.log(`[POP3] Connecting to ${pop3}...`);
@@ -61,24 +64,37 @@ async function fetchEmails({ username, password, pop3 }) {
       `[POP3] Retrieved ${uidList.length} message UIDs for ${username}`
     );
 
-    const emails = [];
-
     // Limit the number of emails to fetch
-    // We take the most recent emails (highest message numbers) first
-    const sortedUidList = [...uidList].sort((a, b) => b[0] - a[0]); // Sort by message number in descending order
-    const limitedUidList = sortedUidList.slice(0, MAX_EMAILS);
+    const limitedUidList = [...uidList].slice(0, MAX_EMAILS);
 
     console.log(
       `[POP3] Limiting to ${limitedUidList.length} most recent emails for ${username}`
     );
 
-    // Fetch each message
+    // helper: wrap an async operation with a timeout
+    const withTimeout = (promise, ms, label = 'operation') =>
+      Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+        ),
+      ]);
+
+    // Fetch each message (skip if a single message blocks for too long)
+    // On persistent failures we'll abort the mailbox fetch to avoid leaving the POP3 session in an unknown state.
+    const PER_MESSAGE_TIMEOUT = 30_000; // ms
     for (const [msgNum, uid] of limitedUidList) {
       try {
         console.log(
           `[POP3] Retrieving message #${msgNum} (UID: ${uid}) for ${username}`
         );
-        const rawEmail = await pop3Client.RETR(msgNum);
+        // Run RETR under per-message timeout guard.
+        // If a RETR hangs or takes too long we'll abort and close the connection for this mailbox.
+        const rawEmail = await withTimeout(
+          pop3Client.RETR(msgNum),
+          PER_MESSAGE_TIMEOUT,
+          `RETR #${msgNum}`
+        );
 
         emails.push({
           number: msgNum,
@@ -95,6 +111,11 @@ async function fetchEmails({ username, password, pop3 }) {
           `[POP3] Error retrieving message #${msgNum} for ${username}:`,
           err
         );
+        // If the error was a timeout or indicates the connection is broken, abort fetching further messages
+        if (String(err).toLowerCase().includes('timed out') || String(err).toLowerCase().includes('timeout')) {
+          console.warn(`[POP3] Aborting further retrieval for ${username} after timeout on message #${msgNum}`);
+          break; // break the loop and close the connection safely below
+        }
       }
     }
 
@@ -113,9 +134,23 @@ async function fetchEmails({ username, password, pop3 }) {
     try {
       await pop3Client.QUIT();
     } catch (e) {
+      // If quitting itself times out, log but continue — we'll return partial results when appropriate
       console.error(`[POP3] Error while quitting:`, e);
     }
 
+    // If this is a socket/timeout error we treat it as recoverable and return the messages we've already collected.
+    const errStr = String(error || "").toLowerCase();
+    if (
+      (error && error.eventName === "timeout") ||
+      /timed out|timeout/.test(errStr)
+    ) {
+      console.warn(
+        `[POP3] Recovering from timeout for ${username}@${pop3} — returning ${emails.length} messages collected so far.`
+      );
+      return emails;
+    }
+
+    // Otherwise re-throw so callers know this mailbox failed
     throw error;
   }
 }
