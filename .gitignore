@@ -1,0 +1,7 @@
+.env
+config.json
+config copy.json
+
+dist
+node_modules
+build
