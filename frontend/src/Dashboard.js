@@ -57,9 +57,9 @@ export const Dashboard = ({
                 }))
               );
             allEmails.sort((a, b) => {
-              const dateA = new Date(a.date);
-              const dateB = new Date(b.date);
-              return dateB - dateA;
+              const aMs = a.dateMs || Date.parse(a.date) || 0;
+              const bMs = b.dateMs || Date.parse(b.date) || 0;
+              return bMs - aMs;
             });
             return allEmails;
           })()}

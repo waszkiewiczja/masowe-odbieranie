@@ -98,6 +98,40 @@ function App() {
       });
 
       setMailboxes(processedMailboxes);
+
+      // Log summary for the last 7 days: day (YYYY-MM-DD) => number of emails
+      (function logLast7DaysSummary() {
+        const now = new Date();
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate() - i
+          );
+          days.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD
+        }
+
+        // Flatten all emails from successful mailboxes
+        const allEmails = processedMailboxes
+          .filter((m) => m.success)
+          .flatMap((m) => m.emails || []);
+
+        const counts = {};
+        days.forEach((day) => (counts[day] = 0));
+
+        for (const e of allEmails) {
+          const ts = e.dateMs || Date.parse(e.date);
+          if (!ts || isNaN(ts)) continue;
+          const key = new Date(ts).toISOString().slice(0, 10);
+          if (key in counts) counts[key]++;
+        }
+
+        console.log("[FRONTEND] Email counts for last 7 days (day: count):");
+        for (const day of days) {
+          console.log(`${day}: ${counts[day]}`);
+        }
+      })();
     } catch (err) {
       console.error("[FRONTEND] Fetch error:", err);
       setError(`Error fetching emails: ${err.message}`);

@@ -31,12 +31,14 @@ function tryRepairEncoding(text) {
   // If there's no mojibake signs, skip work
   if (!looksLikeMojibake(text)) return text;
 
-  if (typeof TextDecoder === 'undefined') return text;
+  if (typeof TextDecoder === "undefined") return text;
 
   // Convert JS string (each char is 0-255) to bytes
-  const bytes = new Uint8Array(text.split('').map(c => c.charCodeAt(0) & 0xff));
+  const bytes = new Uint8Array(
+    text.split("").map((c) => c.charCodeAt(0) & 0xff)
+  );
 
-  const candidates = ['utf-8', 'windows-1250', 'iso-8859-2', 'windows-1252'];
+  const candidates = ["utf-8", "windows-1250", "iso-8859-2", "windows-1252"];
   for (const enc of candidates) {
     try {
       const decoded = new TextDecoder(enc).decode(bytes);
@@ -305,16 +307,18 @@ export function parseEmailBody(body, contentType, headers) {
 
     // Try to detect charset for single-part bodies and decode if possible
     const charsetMatch = contentType.match(/charset="?([^";\r\n]+)"?/i);
-    if (!charsetMatch && typeof TextDecoder !== 'undefined') {
+    if (!charsetMatch && typeof TextDecoder !== "undefined") {
       // No specified charset -> try to repair mojibake (common case when body bytes are UTF-8 but decoded incorrectly)
       parsedBody = tryRepairEncoding(parsedBody);
-    } else if (charsetMatch && typeof TextDecoder !== 'undefined') {
+    } else if (charsetMatch && typeof TextDecoder !== "undefined") {
       try {
         const charset = charsetMatch[1];
-        const bytes = new Uint8Array(parsedBody.split("").map((c) => c.charCodeAt(0)));
+        const bytes = new Uint8Array(
+          parsedBody.split("").map((c) => c.charCodeAt(0))
+        );
         parsedBody = new TextDecoder(charset).decode(bytes);
       } catch (e) {
-        console.error('Error decoding single-part charset:', e);
+        console.error("Error decoding single-part charset:", e);
       }
     }
   }
@@ -416,6 +420,17 @@ export function parseRawEmail(rawEmail) {
     // Parse Date header
     const date = parseDateHeader(parsedHeaders.date);
 
+    // Also attempt to parse a numeric timestamp for reliable sorting
+    let dateMs = null;
+    try {
+      const parsedDate = new Date(parsedHeaders.date);
+      if (!isNaN(parsedDate.getTime())) {
+        dateMs = parsedDate.getTime();
+      }
+    } catch (e) {
+      // ignore parsing errors — dateMs will remain null
+    }
+
     // Parse email body
     const { parsedBody, isHtml } = parseEmailBody(
       body,
@@ -427,7 +442,7 @@ export function parseRawEmail(rawEmail) {
     let finalBody = parsedBody;
     if (
       parsedHeaders.contentTransferEncoding.toLowerCase() ===
-      "quoted-printable" ||
+        "quoted-printable" ||
       finalBody.includes("=3D")
     ) {
       finalBody = decodeQuotedPrintable(finalBody);
@@ -440,6 +455,7 @@ export function parseRawEmail(rawEmail) {
       from: fromData.formatted,
       subject: subject,
       date: date,
+      dateMs: dateMs,
       text: finalBody,
       isHtml,
       // Additional metadata if needed
