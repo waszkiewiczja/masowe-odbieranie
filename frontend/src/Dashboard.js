@@ -14,6 +14,7 @@ export const Dashboard = ({
   const [replyingEmail, setReplyingEmail] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [replyStatus, setReplyStatus] = useState(null);
+  const [replyIsHtml, setReplyIsHtml] = useState(false);
   const [repliedKeys, setRepliedKeys] = useState([]);
 
   // Fetch replied keys on mount
@@ -67,15 +68,14 @@ export const Dashboard = ({
           replyText={replyText}
           setReplyText={setReplyText}
           replyStatus={replyStatus}
+          replyIsHtml={replyIsHtml}
+          setReplyIsHtml={setReplyIsHtml}
           repliedUids={repliedKeys}
           onReply={(email) => {
             setReplyingEmail(email);
-            // Pick a random 60-word excerpt from text.js
-            const words = text.split(/\s+/);
-            const maxStart = Math.max(0, words.length - 60);
-            const startIdx = Math.floor(Math.random() * (maxStart + 1));
-            const excerpt = words.slice(startIdx, startIdx + 60).join(" ");
-            setReplyText(excerpt);
+            // Clear default reply text and HTML mode
+            setReplyText("");
+            setReplyIsHtml(false);
             setReplyStatus(null);
           }}
           handleSendReply={() => {
@@ -86,20 +86,32 @@ export const Dashboard = ({
             console.log("Sending reply to:", replyingEmail.from);
             setReplyStatus("sending");
             const replyKey = `${replyingEmail.date}|${replyingEmail.mailbox}|${replyingEmail.from}`;
+
+            const stripTags = (s) =>
+              s ? s.replace(/<\/?[^>]+(>|$)/g, "") : "";
+
+            const payload = {
+              mailbox: replyingEmail.mailbox,
+              to: replyingEmail.from,
+              subject: `Re: ${replyingEmail.subject}`,
+              inReplyTo: replyingEmail.messageId,
+              references: replyingEmail.messageId,
+              replyKey: replyKey,
+            };
+
+            if (replyIsHtml) {
+              payload.html = replyText;
+              payload.text = stripTags(replyText);
+            } else {
+              payload.text = replyText;
+            }
+
             fetch("http://localhost:3001/api/reply", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({
-                mailbox: replyingEmail.mailbox,
-                to: replyingEmail.from,
-                subject: `Re: ${replyingEmail.subject}`,
-                text: replyText,
-                inReplyTo: replyingEmail.messageId,
-                references: replyingEmail.messageId,
-                replyKey: replyKey,
-              }),
+              body: JSON.stringify(payload),
             })
               .then(async (res) => {
                 console.log("Reply API response status:", res.status);
@@ -111,6 +123,7 @@ export const Dashboard = ({
                   setReplyStatus("sent");
                   setReplyingEmail(null);
                   setReplyText("");
+                  setReplyIsHtml(false);
                   setRepliedKeys((prev) =>
                     prev ? [...prev, replyKey] : [replyKey]
                   );
@@ -125,6 +138,7 @@ export const Dashboard = ({
           handleCancelReply={() => {
             setReplyingEmail(null);
             setReplyText("");
+            setReplyIsHtml(false);
             setReplyStatus(null);
           }}
         />

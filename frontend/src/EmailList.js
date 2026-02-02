@@ -7,6 +7,8 @@ export function EmailList({
   replyText,
   setReplyText,
   replyStatus,
+  replyIsHtml,
+  setReplyIsHtml,
   repliedUids,
   onReply,
   handleSendReply,
@@ -60,6 +62,8 @@ export function EmailList({
               replied={repliedUids && repliedUids.includes(replyKey)}
               replyText={replyText}
               setReplyText={setReplyText}
+              replyIsHtml={replyIsHtml}
+              setReplyIsHtml={setReplyIsHtml}
               replyStatus={replyStatus}
               handleSendReply={handleSendReply}
               handleCancelReply={handleCancelReply}

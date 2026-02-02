@@ -7,6 +7,8 @@ export function EmailItem({
   replied,
   replyText,
   setReplyText,
+  replyIsHtml,
+  setReplyIsHtml,
   replyStatus,
   handleSendReply,
   handleCancelReply,
@@ -65,9 +67,12 @@ export function EmailItem({
         {email.isHtml ? (
           <div dangerouslySetInnerHTML={{ __html: email.text }} />
         ) : (
-          <div style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
-            {email.text}
-          </div>
+          <div
+            style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}
+            dangerouslySetInnerHTML={{
+              __html: email.text,
+            }}
+          />
         )}
       </div>
       <button
@@ -93,8 +98,29 @@ export function EmailItem({
                 style={{ width: "100%", minHeight: 80, marginBottom: 8 }}
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                placeholder="Type your reply here..."
+                placeholder={
+                  replyIsHtml
+                    ? "Type your HTML reply here..."
+                    : "Type your reply here..."
+                }
               />
+
+              <div style={{ marginBottom: 8 }}>
+                <label
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={replyIsHtml}
+                    onChange={(e) => setReplyIsHtml(e.target.checked)}
+                  />
+                  <span>Send as HTML</span>
+                </label>
+              </div>
               <div>
                 <button
                   style={{
