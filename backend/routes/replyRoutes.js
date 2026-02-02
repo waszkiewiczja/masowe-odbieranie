@@ -7,7 +7,7 @@ const router = express.Router();
 
 // API endpoint to reply/send email
 router.post("/", async (req, res) => {
-  const { mailbox, to, subject, text, inReplyTo, references, replyKey } =
+  const { mailbox, to, subject, text, html, inReplyTo, references, replyKey } =
     req.body;
   const box = mailboxes.find((mb) => mb.username === mailbox);
   if (!box) {
@@ -25,26 +25,51 @@ router.post("/", async (req, res) => {
     },
   });
 
+  const stripTags = (s) => (s ? s.replace(/<\/?[^>]+(>|$)/g, "") : "");
+
+  // Normalize HTML: remove excess whitespace/newlines between tags and trim inner text
+  const normalizeHtml = (h) => {
+    if (!h) return h;
+    try {
+      // Remove whitespace between tags (e.g. \n    <tr>) and collapse multiple spaces/newlines
+      let out = h.replace(/>\s+</g, "><");
+      // Trim whitespace inside tag content (e.g. anchor text)
+      out = out.replace(/>\s+([^<]*?)\s+</g, ">$1<");
+      // Collapse consecutive whitespace characters to single spaces
+      out = out.replace(/\s{2,}/g, " ");
+      return out;
+    } catch (e) {
+      return h;
+    }
+  };
+
   const mailOptions = {
     from: box.username,
     to,
     subject,
-    text,
+    text: text || stripTags(html),
     headers: {},
   };
+  if (html) mailOptions.html = normalizeHtml(html);
   if (inReplyTo) mailOptions.headers["In-Reply-To"] = inReplyTo;
   if (references) mailOptions.headers["References"] = references;
 
+  // Ensure text fallback is meaningful when html is provided
+  if (
+    mailOptions.html &&
+    (!mailOptions.text || mailOptions.text.trim().length < 10)
+  ) {
+    mailOptions.text = stripTags(mailOptions.html);
+  }
+
   try {
     const info = await transporter.sendMail(mailOptions);
-
-    console.log("replyKey", replyKey);
-    // Save replied composite key
     if (replyKey) {
       saveRepliedKey(replyKey);
     }
     res.json({ success: true, info });
   } catch (err) {
+    console.error("Error sending mail:", err);
     res.status(500).json({ error: err.message });
   }
 });
